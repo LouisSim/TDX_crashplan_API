@@ -1,4 +1,3 @@
-# This is a sample Python script.
 import requests
 import tkinter as tk
 # Press Shift+F10 to execute it or replace it with your code.
@@ -15,6 +14,7 @@ class MessageInfo:
     message_type = ""
     user_name = ""
     text = ""
+    title = ""
 
     def __init__(self, message_type, user_name):
         self.message_type = message_type
@@ -66,23 +66,23 @@ def get_device_info(input_list):
             search_response_raw = requests.post(ASSET_SEARCH_URL, json=payload, headers=headers)
             search_response_raw.raise_for_status()
             search_response = search_response_raw.json()
-            # TODO:these except statements most likely need to be changed, just did some basics
+            # TODO:these except statements most likely need to be changed
         except requests.exceptions.HTTPError as http_err:
             print(f'HTTP error occurred: {http_err}')
-            error_out()
+            error_out(f'HTTP error occurred: {http_err}')
         except requests.exceptions.RequestException as req_err:
             print(f'Request error occurred: {req_err}')
-            error_out()
+            error_out(f'Request error occurred: {req_err}')
         except Exception as err:
             print(f'An error occurred: {err}')
-            error_out()
+            error_out(f'An error occurred: {err}')
         finally:
             if not search_response:
                 print("Error with finding device: ", serial_number)
-                error_out()
+                error_out("Error with finding device: " + serial_number)
             if search_response.len() > 1:
                 # more than one asset record returned
-                error_out()
+                error_out("An error occurred: more then one asset record returned")
             else:
                 device = {"assetID": search_response[0]["ID"], "serial": serial_number,
                           "ownerUID": search_response[0]["OwningCustomerUID"], "miws_tag": search_response[0]["tag"],
@@ -111,20 +111,20 @@ def add_user_data(devices):
             user_response = user_response_raw.json()  # TODO: need to test at how this will output
         except requests.exceptions.HTTPError as http_err:
             print(f'HTTP error occurred: {http_err}')
-            error_out()
+            error_out(f'HTTP error occurred: {http_err}')
         except requests.exceptions.RequestException as req_err:
             print(f'Request error occurred: {req_err}')
-            error_out()
+            error_out(f'Request error occurred: {req_err}')
         except Exception as err:
             print(f'An error occurred: {err}')
-            error_out()
+            error_out(f'An error occurred: {err}')
         finally:
             #  update the device data structure with the user information. User is a separate dictionary
             device["user"] = {"first_name": user_response["FirstName"], "last_name": user_response["LastName"],
                               "email": user_response["UserName"]}
 
 
-def create_tickets(devices):
+def create_tickets(devices, message_info):
     """Create the tickets for each device"""
 
     """
@@ -133,11 +133,25 @@ def create_tickets(devices):
     ticket_ids = []
     for device in devices:
         ticket_response = {}
-        payload = {'TypeID': 63, 'Classification': '46', 'ServiceID': 125,
-                   'Title': f'Crashplan issue for user {device['user']['email'][:-10]} on device {device['miws_tag']}',
+        if message_info.message_type == "create":
+            title = f"Crashplan setup for user {device['user']['email'][:-10]} on device {device['miws_tag']}"
+        elif message_info.message_type == "sync":
+            title = f"Crashplan sync for user {device['user']['email'][:-10]} on device {device['miws_tag']}"
+        else:
+            title = message_info.title
+
+        if message_info.message_type == "create":
+            description = (f"Crashplan needs to be setup for user "
+                           f"{device['user']['email'][:-10]} on device {device['miws_tag']}")
+        elif message_info.message_type == "sync":
+            description = (f"Crashplan needs to be synced for user "
+                           f"{device['user']['email'][:-10]} on device {device['miws_tag']}")
+        else:
+            description = message_info.description
+        payload = {'TypeID': 63, 'Classification': '46', 'ServiceID': 125, 'Title': title,
                    'StatusID': 77, 'SourceID': 8, 'RequesterEmail': {device['user']['email']}, 'ResponsibleGroupID': 32,
                    # TODO:  32 should be central-5, may need to update input later to change this
-                   'LocationID': device['locationID']}  # TODO: Good for now, might want to add description values later
+                   'LocationID': device['locationID'], 'Description': description}
         headers = {'Authorization': 'Bearer XXX', 'Content-Type': 'application/json'}
         try:
             ticket_response_raw = requests.post(TICKET_CREATE_URL, json=payload, headers=headers)
@@ -145,13 +159,13 @@ def create_tickets(devices):
             ticket_response = ticket_response_raw.json()
         except requests.exceptions.HTTPError as http_err:
             print(f'HTTP error occurred: {http_err}')
-            error_out()
+            error_out(f'HTTP error occurred: {http_err}')
         except requests.exceptions.RequestException as req_err:
             print(f'Request error occurred: {req_err}')
-            error_out()
+            error_out(f'Request error occurred: {req_err}')
         except Exception as err:
             print(f'An error occurred: {err}')
-            error_out()
+            error_out(f'An error occurred: {err}')
         ticket_ids.append(ticket_response['ID'])
     return ticket_ids
 
@@ -172,10 +186,9 @@ def send_message(ticket_ids, devices, message_info):
             print("not ready yet")
             #  TODO: DEAL WITH CUSTOM MESSAGE LATER
         else:
-            error_out()
+            error_out("Message type not set correctly")
         payload = {"Comments": comment,  # temp value
                    "Notify": [device['user']['email']], "IsPrivate": False, "IsRichHtml": False}
-        # TODO: Html may need to be rich, look at later
         headers = {'Authorization': 'Bearer XXX', 'Content-Type': 'application/json'}
         try:
             ticket_response_raw = requests.post(TICKET_COMMENT_URL + str(ticket_ids[i]) + "/feed",
@@ -185,18 +198,22 @@ def send_message(ticket_ids, devices, message_info):
             #  Should not need this response, here if needed
         except requests.exceptions.HTTPError as http_err:
             print(f'HTTP error occurred: {http_err}')
-            error_out()
+            error_out(f'HTTP error occurred: {http_err}')
         except requests.exceptions.RequestException as req_err:
             print(f'Request error occurred: {req_err}')
-            error_out()
+            error_out(f'Request error occurred: {req_err}')
         except Exception as err:
             print(f'An error occurred: {err}')
-            error_out()
+            error_out(f'An error occurred: {err}')
 
 
-def error_out():  # TODO: UPDATE FOR LATER USE IN ORDER TO PROIDE FEEDBACK TO USER
+# TODO: Fix Exceptions to make sure tickets dont get created with bad asset
+def error_out(error_message):
     """Send error message and exit(1). Update for future use"""
     print("An error occurred")
+    error_pop = tk.Tk()
+    tk.Label(error_pop, text=error_message, font=('calibre', 12, 'bold'), bg='red').pack()
+    error_pop.mainloop()
     exit(1)
 
 
@@ -213,11 +230,12 @@ def submit_text():
     api_execute(serial_list, message_info)
 
 
+
 def api_execute(input_list, message_info):  # List of serial numbers
     """Execute the API functions in order"""
     device_data = get_device_info(input_list)
     add_user_data(device_data)
-    tickets = create_tickets(device_data)
+    tickets = create_tickets(device_data, message_info)
     send_message(tickets, device_data, message_info)
 
 
@@ -249,10 +267,15 @@ class WrappingLabel(tk.Label):
 
 def enable_submit():
     """Sets the submit button to active if a radiobutton is enabled"""
-    if message.get():  # If any radiobutton is selected
+    if message.get() and name.get() != '':  # If any radiobutton is selected
         submit_button.config(state=tk.NORMAL)  # Enable the Submit button
+
     else:
         submit_button.config(state=tk.DISABLED)  # Disable the Submit button if no option is selected
+
+
+def trace_wrapper(*args):
+    enable_submit()
 
 
 if __name__ == '__main__':
@@ -262,7 +285,8 @@ if __name__ == '__main__':
 
     # initialize needed variables
     message = tk.StringVar()
-    name = tk.StringVar(value="Your Name")
+    name = tk.StringVar(value="")
+    name.trace_add("write", trace_wrapper)
     tk.Label(m, text="Input Serial numbers, one on each line (Maximum of 10)", font=('calibre', 12)).pack()
     #  create text box
     t1 = tk.Text(m, width=50, height=10)
@@ -270,12 +294,13 @@ if __name__ == '__main__':
     #  create options for message prompts
     r1 = tk.Radiobutton(m, text='Crashplan Create', variable=message, value='create', command=lambda: [update_message(), enable_submit()])
     r2 = tk.Radiobutton(m, text='Crashplan Sync', variable=message, value='sync',  command=lambda: [update_message(), enable_submit()])
-    r3 = tk.Radiobutton(m, text='Custom', variable=message, value='custom', command=lambda: [update_message(), enable_submit()])
-    r1.pack(anchor='w'), r2.pack(anchor='w'), r3.pack(anchor='w')
+    # r3 = tk.Radiobutton(m, text='Custom', variable=message, value='custom', command=lambda: [update_message(), enable_submit()])
+    r1.pack(anchor='w'), r2.pack(anchor='w'), # r3.pack(anchor='w')
     #  get name of IT user
     tk.Label(m, text="Input your full name", font=('calibre', 12)).pack()
     e1 = tk.Entry(m, textvariable=name)
     e1.pack()
+
     #  Create Submit button
     submit_button = tk.Button(m, text="Submit", command=submit_text, width=30, bg="darkgrey", state=tk.DISABLED)
     submit_button.pack(padx=20, pady=10)
